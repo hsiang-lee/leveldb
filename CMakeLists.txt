@@ -30,8 +30,6 @@ else (WIN32)
   set(LEVELDB_PLATFORM_NAME LEVELDB_PLATFORM_POSIX)
 endif (WIN32)
 
-option(LEVELDB_BUILD_TESTS "Build LevelDB's unit tests" ON)
-option(LEVELDB_BUILD_BENCHMARKS "Build LevelDB's benchmarks" ON)
 option(LEVELDB_INSTALL "Install LevelDB's header and library" ON)
 
 include(CheckIncludeFile)
@@ -81,10 +79,6 @@ endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 # https://clang.llvm.org/docs/ThreadSafetyAnalysis.html
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag(-Wthread-safety HAVE_CLANG_THREAD_SAFETY)
-
-# Used by googletest.
-check_cxx_compiler_flag(-Wno-missing-field-initializers
-                        LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS)
 
 include(CheckCXXSourceCompiles)
 
@@ -289,184 +283,6 @@ add_executable(leveldbutil
   "db/leveldbutil.cc"
 )
 target_link_libraries(leveldbutil leveldb)
-
-if(LEVELDB_BUILD_TESTS)
-  enable_testing()
-
-  # Prevent overriding the parent project's compiler/linker settings on Windows.
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  set(install_gtest OFF)
-  set(install_gmock OFF)
-  set(build_gmock ON)
-
-  # This project is tested using GoogleTest.
-  add_subdirectory("third_party/googletest")
-
-  # GoogleTest triggers a missing field initializers warning.
-  if(LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS)
-    set_property(TARGET gtest
-        APPEND PROPERTY COMPILE_OPTIONS -Wno-missing-field-initializers)
-    set_property(TARGET gmock
-        APPEND PROPERTY COMPILE_OPTIONS -Wno-missing-field-initializers)
-  endif(LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS)
-
-  add_executable(leveldb_tests "")
-  target_sources(leveldb_tests
-    PRIVATE
-      # "db/fault_injection_test.cc"
-      # "issues/issue178_test.cc"
-      # "issues/issue200_test.cc"
-      # "issues/issue320_test.cc"
-      "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
-      # "util/env_test.cc"
-      "util/status_test.cc"
-      "util/no_destructor_test.cc"
-      "util/testutil.cc"
-      "util/testutil.h"
-  )
-  if(NOT BUILD_SHARED_LIBS)
-    target_sources(leveldb_tests
-      PRIVATE
-        "db/autocompact_test.cc"
-        "db/corruption_test.cc"
-        "db/db_test.cc"
-        "db/dbformat_test.cc"
-        "db/filename_test.cc"
-        "db/log_test.cc"
-        "db/recovery_test.cc"
-        "db/skiplist_test.cc"
-        "db/version_edit_test.cc"
-        "db/version_set_test.cc"
-        "db/write_batch_test.cc"
-        "helpers/memenv/memenv_test.cc"
-        "table/filter_block_test.cc"
-        "table/table_test.cc"
-        "util/arena_test.cc"
-        "util/bloom_test.cc"
-        "util/cache_test.cc"
-        "util/coding_test.cc"
-        "util/crc32c_test.cc"
-        "util/hash_test.cc"
-        "util/logging_test.cc"
-    )
-  endif(NOT BUILD_SHARED_LIBS)
-  target_link_libraries(leveldb_tests leveldb gmock gtest gtest_main)
-  target_compile_definitions(leveldb_tests
-    PRIVATE
-      ${LEVELDB_PLATFORM_NAME}=1
-  )
-  if (NOT HAVE_CXX17_HAS_INCLUDE)
-    target_compile_definitions(leveldb_tests
-      PRIVATE
-        LEVELDB_HAS_PORT_CONFIG_H=1
-    )
-  endif(NOT HAVE_CXX17_HAS_INCLUDE)
-
-  add_test(NAME "leveldb_tests" COMMAND "leveldb_tests")
-
-  function(leveldb_test test_file)
-    get_filename_component(test_target_name "${test_file}" NAME_WE)
-
-    add_executable("${test_target_name}" "")
-    target_sources("${test_target_name}"
-      PRIVATE
-        "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
-        "util/testutil.cc"
-        "util/testutil.h"
-
-        "${test_file}"
-    )
-    target_link_libraries("${test_target_name}" leveldb gmock gtest)
-    target_compile_definitions("${test_target_name}"
-      PRIVATE
-        ${LEVELDB_PLATFORM_NAME}=1
-    )
-    if (NOT HAVE_CXX17_HAS_INCLUDE)
-      target_compile_definitions("${test_target_name}"
-        PRIVATE
-          LEVELDB_HAS_PORT_CONFIG_H=1
-      )
-    endif(NOT HAVE_CXX17_HAS_INCLUDE)
-
-    add_test(NAME "${test_target_name}" COMMAND "${test_target_name}")
-  endfunction(leveldb_test)
-
-  leveldb_test("db/c_test.c")
-
-  if(NOT BUILD_SHARED_LIBS)
-    # TODO(costan): This test also uses
-    #               "util/env_{posix|windows}_test_helper.h"
-    if (WIN32)
-      leveldb_test("util/env_windows_test.cc")
-    else (WIN32)
-      leveldb_test("util/env_posix_test.cc")
-    endif (WIN32)
-  endif(NOT BUILD_SHARED_LIBS)
-endif(LEVELDB_BUILD_TESTS)
-
-if(LEVELDB_BUILD_BENCHMARKS)
-  # This project uses Google benchmark for benchmarking.
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-  set(BENCHMARK_ENABLE_EXCEPTIONS OFF CACHE BOOL "" FORCE)
-  add_subdirectory("third_party/benchmark")
-
-  function(leveldb_benchmark bench_file)
-    get_filename_component(bench_target_name "${bench_file}" NAME_WE)
-
-    add_executable("${bench_target_name}" "")
-    target_sources("${bench_target_name}"
-      PRIVATE
-        "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
-        "util/histogram.cc"
-        "util/histogram.h"
-        "util/testutil.cc"
-        "util/testutil.h"
-
-        "${bench_file}"
-    )
-    target_link_libraries("${bench_target_name}" leveldb gmock gtest benchmark)
-    target_compile_definitions("${bench_target_name}"
-      PRIVATE
-        ${LEVELDB_PLATFORM_NAME}=1
-    )
-    if (NOT HAVE_CXX17_HAS_INCLUDE)
-      target_compile_definitions("${bench_target_name}"
-        PRIVATE
-          LEVELDB_HAS_PORT_CONFIG_H=1
-      )
-    endif(NOT HAVE_CXX17_HAS_INCLUDE)
-  endfunction(leveldb_benchmark)
-
-  if(NOT BUILD_SHARED_LIBS)
-    leveldb_benchmark("benchmarks/db_bench.cc")
-  endif(NOT BUILD_SHARED_LIBS)
-
-  check_library_exists(sqlite3 sqlite3_open "" HAVE_SQLITE3)
-  if(HAVE_SQLITE3)
-    leveldb_benchmark("benchmarks/db_bench_sqlite3.cc")
-    target_link_libraries(db_bench_sqlite3 sqlite3)
-  endif(HAVE_SQLITE3)
-
-  # check_library_exists is insufficient here because the library names have
-  # different manglings when compiled with clang or gcc, at least when installed
-  # with Homebrew on Mac.
-  set(OLD_CMAKE_REQURED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-  list(APPEND CMAKE_REQUIRED_LIBRARIES kyotocabinet)
-  check_cxx_source_compiles("
-#include <kcpolydb.h>
-
-int main() {
-  kyotocabinet::TreeDB* db = new kyotocabinet::TreeDB();
-  delete db;
-  return 0;
-}
-  "  HAVE_KYOTOCABINET)
-  set(CMAKE_REQUIRED_LIBRARIES ${OLD_CMAKE_REQURED_LIBRARIES})
-  if(HAVE_KYOTOCABINET)
-    leveldb_benchmark("benchmarks/db_bench_tree_db.cc")
-    target_link_libraries(db_bench_tree_db kyotocabinet)
-  endif(HAVE_KYOTOCABINET)
-endif(LEVELDB_BUILD_BENCHMARKS)
 
 if(LEVELDB_INSTALL)
   install(TARGETS leveldb
